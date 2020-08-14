@@ -29,6 +29,7 @@ static char *encode(enum matrixFunction funcName) {
         case MULTIPLY:    sprintf(numStr, "%s%d", str, nMultiply++); break;
         case TRANSPOSE:   sprintf(numStr, "%s%d", str, nTranspose++); break;
         case CONVOLUTION: sprintf(numStr, "%s%d", str, nConv++); break;
+        default:          return NULL;
     }
     return numStr;
 }
@@ -69,7 +70,7 @@ node_t *clone(node_t *node) {
 
 node_t *_productRule(node_t *deltaNode, node_t *forwardNode, enum matrixFunction funcName, node_t ***lossPoints, int *nLoss) {
     push(lossPoints, nLoss, deltaNode);
-    node_t *op = nodeInit(encode(funcName), 2, 1, false);
+    node_t *op = nodeInit(encode(funcName), funcName == CONVOLUTION ? 3 : 2, 1, false);
     op->content.operation.funcName = funcName;
     forwardNode->outputs[0] = op;
     linkDeriv(op, _differentiate(deltaNode, lossPoints, nLoss));
@@ -140,14 +141,18 @@ node_t *_differentiate(node_t *node, node_t ***lossPoints, int *nLoss) {
                 {node_t *k = clone(node->inputs[1]);
                 node_t *rotate = nodeInit("rotate", 1, 1, false);
                 k->outputs[0] = rotate;
+                rotate->inputs[0] = k;
+
+                rotate->content.operation.funcName = ROTATE;
 
                 derivative = productRule(clone(node->inputs[0]), rotate, CONVOLUTION, lossPoints, nLoss);
 
                 //Dilate the derivative when finding dA
                 node_t conv = *derivative->outputs[1];
+                conv.inputs[2] = nodeInit("config", 0, 1, true);
                 //dPadding = Padding - 1; dStride = Stride
-                matrix2d_t *args = conv.inputs[2]->matrix;
-                matrixSet(args, 0, 1, matrixGet(node->inputs[2]->matrix, 0, 1) - 1);
+                matrix2d_t *args = conv.inputs[2]->matrix->matrix2d;
+                matrixSet(args, 0, 1, matrixGet(node->inputs[2]->matrix->matrix2d, 0, 1) - 1);
                 matrixSet(args, 0, 0, 1);
 
                 //0th input is the matrix to be dilated, args are in the 1st input
@@ -155,18 +160,36 @@ node_t *_differentiate(node_t *node, node_t ***lossPoints, int *nLoss) {
                 dilate->content.operation.funcName = DILATE;
 
                 dilate->outputs[0] = &conv;
-                matrixSet(dilate->inputs[1]->matrix, 0, 0, matrixGet(node->inputs[2]->matrix, 0, 0) - 1);
+                matrixSet(dilate->inputs[1]->matrix->matrix2d, 0, 0, matrixGet(node->inputs[2]->matrix->matrix2d, 0, 0) - 1);
 
                 derivative->outputs[1] = dilate;
-                matrix2d_t *mat = derivative->outputs[0]->inputs[2]->matrix;
+                matrix2d_t *mat = derivative->outputs[0]->inputs[2]->matrix->matrix2d;
                 
                 //1 stride 0 padding
                 matrixSet(mat, 0, 0, 1);
                 matrixSet(mat, 0, 1, 0);}
                 break;
             case MAX_POOLING:
+                derivative = nodeInit("dMAXPOOLING", 1, 1, false);
+                derivative->content.operation.funcName = MAX_POOLING;
+                linkDeriv(derivative, _differentiate(node->inputs[0], lossPoints, nLoss));
                 break;
             case AVERAGE_POOLING:
+                break;
+            case FLATTEN:
+                derivative = nodeInit("FLATTEN", 2, 1, false);
+                derivative->content.operation.funcName = FLATTEN;
+
+                node_t *config = nodeInit("config", 0, 1, true);
+                config->matrix->matrix2d = matrixCreate(1, 3);
+                
+                matrix3d_t *inputMatrix = node->inputs[0]->matrix->matrix3d;
+                matrixSet(config->matrix->matrix2d, 0, 0, inputMatrix->nRows);
+                matrixSet(config->matrix->matrix2d, 0, 1, inputMatrix->nCols);
+                matrixSet(config->matrix->matrix2d, 0, 2, inputMatrix->nDepth);
+                derivative->inputs[1] = config;
+
+                linkDeriv(derivative,  _differentiate(node->inputs[0], lossPoints, nLoss));
                 break;
             default:
             //TODO: efficientise
@@ -218,12 +241,12 @@ node_t *insertNoOp(node_t *node, int outputIdx) {
 
 //PRE: node doesn't have 1 output
 //POST:
-void *_compile(node_t *node, node_t ***compiled, int *nCompiled, node_t ***lossPoints, int *nLoss) {
+void _compile(node_t *node, node_t ***compiled, int *nCompiled, node_t ***lossPoints, int *nLoss) {
     node_t *diff;
     if (!contains(*compiled, *nCompiled, node)) {
         if (strcmp("noop", node->name)) push(compiled, nCompiled, node);
         if (1 == node->m) {
-            return _compile(node->outputs[0], compiled, nCompiled, lossPoints, nLoss);
+            _compile(node->outputs[0], compiled, nCompiled, lossPoints, nLoss);
         } else if (!node->m) {
             diff = differentiate(node, lossPoints, nLoss);
             push(lossPoints, nLoss, diff);

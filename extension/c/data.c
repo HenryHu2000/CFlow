@@ -14,11 +14,11 @@ void writeBlock(FILE *file, node_t node) {
     fwrite(node.name, sizeof(char), strlen(node.name), file);
 
 	//Write length, width to the file
-	fprintf(file, "\t%d\t%d\t", data.data->matrix2d.nRows, data.data->matrix2d.nCols);
+	fprintf(file, "\t%d\t%d\t", data.data->matrix2d->nRows, data.data->matrix2d->nCols);
 
     //Write matrix values to the file
-	for (int i = 0; i < data.data->matrix2d.nRows; i++)
-        fwrite(data.data->matrix2d.data[i], sizeof(double), data.data->matrix2d.nCols, file);
+	for (int i = 0; i < data.data->matrix2d->nRows; i++)
+        fwrite(data.data->matrix2d->data[i], sizeof(double), data.data->matrix2d->nCols, file);
 }
 
 //PRE: file must be in rb mode, string must be large enough to accomodate the data
@@ -51,7 +51,7 @@ static data_t *readBlock(FILE *file) {
     // seek(file, &cRows);
     // seek(file, &cCols);
 
-    char *name = seek(file);
+    seek(file);
     char *cRows = seek(file);
     char *cCols = seek(file);
     int rows = atoi(cRows);
@@ -62,8 +62,9 @@ static data_t *readBlock(FILE *file) {
     }
 
     data_t *data = malloc(sizeof(data_t));
+    data->data = malloc(sizeof(matrix_t));
     data->internalNode = true;
-    data->data = matrix;
+    data->data->matrix2d = matrix;
     return data;
 }
 

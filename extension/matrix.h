@@ -1,22 +1,22 @@
 #ifndef _matrix_h_
 #define _matrix_h_
 
-#include "activation.h"
 #include <stdbool.h>
 
 enum matrixFunction {
     ADD,
-	ACTIVATION,
+    ACTIVATION,
     SUBTRACT,
-    MULTIPLY, 
-    DOT, 
-    CONVOLUTION, 
+    MULTIPLY,
+    DOT,
+    CONVOLUTION,
     DECONVOLUTION,
-	DILATE,
-	ROTATE,
-    MAX_POOLING, 
+    DILATE,
+    ROTATE,
+    MAX_POOLING,
     AVERAGE_POOLING,
-    TRANSPOSE  //PRE: Won't ever be in a forward pass
+    TRANSPOSE,  //PRE: Won't ever be in a forward pass
+    FLATTEN
 };
 
 typedef struct matrix2d {
@@ -32,7 +32,10 @@ typedef struct matrix3d {
     int nDepth;
 } matrix3d_t;
 
+
+#include "activation.h"
 matrix2d_t *matrixCreate(int nRows, int nCols);
+matrix3d_t *matrix3DCreate(int nRows, int nCols, int nDepth);
 double matrixGet(matrix2d_t *matrix, int row, int col);
 void matrixSet(matrix2d_t *matrix, int row, int col, double value);
 double randFloat();
@@ -61,6 +64,10 @@ matrix2d_t *matrixMaxPooling(matrix2d_t *matrix, matrix2d_t *gradient, int strid
 matrix2d_t *matrixAveragePooling(matrix2d_t *matrix, matrix2d_t *gradient, int stride, int filterSize);
 
 bool areMatrixesEqual(matrix2d_t *matrix1, matrix2d_t *matrix2, double tolerance);
+
+matrix2d_t *matrixFlatten(matrix3d_t *matrix);
+double* flatten2d(matrix2d_t *matrix);
+matrix3d_t *matrixUnflatten(matrix2d_t *matrix, int nRows, int nCols, int nDepth);
 
 void matrixPrint(matrix2d_t *matrix);
 

@@ -9,6 +9,7 @@
 #include "../file.h"
 #include "../error.h"
 #include "../optimisers.h"
+#include "../readCSV.h"
 #include "../testUtils.h"
 #include "../train.h"
 #include "../util.h"
@@ -68,19 +69,19 @@ graph_t *genGraphTwo() {
     matrix2d_t *matrix = matrixCreate(20, 10);
 
     node_t *A = nodeInit("A", 0, 1, true);
-    A->content.data->data->matrix2d = *matrix;
+    A->content.data->data->matrix2d = matrix;
     node_t *B = nodeInit("B", 1, 3, true);
-    B->content.data->data->matrix2d = *matrix;
+    B->content.data->data->matrix2d = matrix;
     node_t *C = nodeInit("C", 1, 1, true);
-    C->content.data->data->matrix2d = *matrix;
+    C->content.data->data->matrix2d = matrix;
     node_t *D = nodeInit("D", 2, 1, true);
-    D->content.data->data->matrix2d = *matrix;
+    D->content.data->data->matrix2d = matrix;
     node_t *E = nodeInit("E", 3, 1, true);
-    E->content.data->data->matrix2d = *matrix;
+    E->content.data->data->matrix2d = matrix;
     node_t *F = nodeInit("F", 1, 0, true);
-    F->content.data->data->matrix2d = *matrix;
+    F->content.data->data->matrix2d = matrix;
     node_t *G = nodeInit("G", 0, 1, true);
-    G->content.data->data->matrix2d = *matrix;
+    G->content.data->data->matrix2d = matrix;
 
     linkNodes(A, B);
     linkNodes(G, D);
@@ -106,21 +107,21 @@ graph_t *genGraphThree() {
     matrix2d_t *matrix = matrixCreate(20, 10);
 
     node_t *n5 = nodeInit("5", 0, 1, true);
-    n5->content.data->data->matrix2d = *matrix;
+    n5->content.data->data->matrix2d = matrix;
     node_t *n7 = nodeInit("7", 0, 2, true);
-    n7->content.data->data->matrix2d = *matrix;
+    n7->content.data->data->matrix2d = matrix;
     node_t *n3 = nodeInit("3", 0, 2, true);
-    n3->content.data->data->matrix2d = *matrix;
+    n3->content.data->data->matrix2d = matrix;
     node_t *n11 = nodeInit("11", 2, 3, true);
-    n11->content.data->data->matrix2d = *matrix;
+    n11->content.data->data->matrix2d = matrix;
     node_t *n8 = nodeInit("8", 2, 1, true);
-    n8->content.data->data->matrix2d = *matrix;
+    n8->content.data->data->matrix2d = matrix;
     node_t *n2 = nodeInit("2", 1, 0, true);
-    n2->content.data->data->matrix2d = *matrix;
+    n2->content.data->data->matrix2d = matrix;
     node_t *n9 = nodeInit("9", 2, 0, true);
-    n9->content.data->data->matrix2d = *matrix;
+    n9->content.data->data->matrix2d = matrix;
     node_t *n10 = nodeInit("10", 2, 0, true);
-    n10->content.data->data->matrix2d = *matrix;
+    n10->content.data->data->matrix2d = matrix;
 
     linkNodes(n5, n11);
     linkNodes(n7, n11);
@@ -174,7 +175,7 @@ void trainXOR(void) {
 
     int batchSize = 4;
     
-    x->matrix = matrixCreate(batchSize, 2);
+    x->matrix->matrix2d = matrixCreate(batchSize, 2);
 
     node_t **entryPoints = NULL;
     int n = 0;
@@ -208,9 +209,128 @@ void trainXOR(void) {
 
 }
 
+void trainMNIST() {
+    node_t *x = nodeInit("x", 0, 1, true);
+    x->content.data->internalNode = false;
+
+    int nInstances = 60000;
+
+    // Load training data
+    x->matrix->matrix3d = matrix3DCreate(nInstances, 28, 28);
+    csvDataPack_t trainingData = readCSV("data/mnist_train.csv", nInstances);
+    matrix2d_t** matrixData = trainingData.matrixInputs;
+    for (int i = 0; i < nInstances; i++) {
+        x->matrix->matrix3d->data[i] = matrixData[i]->data;
+    }
+
+
+    node_t **entryPoints = NULL;
+    int n = 0;
+
+    push(&entryPoints, &n, x);
+
+
+    // Add sequential model
+    node_t *layer1 = convolutionalLayer(x, 1, 3, 32, RELU, 1, 0, &entryPoints, &n);
+
+    // Max Pooling Layer
+    matrix3d_t *toMaxPool = layer1->matrix->matrix3d;
+    matrix2d_t **maxPoolGradients = calloc(toMaxPool->nRows, sizeof(matrix2d_t*));
+
+    for (int i = 0; i < toMaxPool->nRows; i++) {
+        matrix2d_t *tmp = matrixCreate(toMaxPool->nCols, toMaxPool->nDepth);
+        tmp->data = toMaxPool->data[i];
+
+        matrix2d_t* maxPooledTmp = matrixMaxPooling(tmp, maxPoolGradients[i], 1, 2);
+        toMaxPool->data[i] = maxPooledTmp->data;
+    }
+
+    layer1->matrix->matrix3d = toMaxPool;
+
+    // Flatten layer
+    layer1->matrix->matrix2d = matrixFlatten(toMaxPool);
+
+    node_t *layer2 = denseLayer(layer1, 128, RELU, &entryPoints, &n);
+
+
+    node_t *layer3 = denseLayer(layer2, 10, SIGMOID, &entryPoints, &n);
+
+    // Output layer
+    node_t *y = nodeInit("y", 1, 0, true);
+    y->content.data->internalNode = false;
+
+    node_t **exitPoints = malloc(sizeof(node_t*));
+    exitPoints[0] = y;
+
+    graph_t *network = graphInit("mnist", n, entryPoints, 1, exitPoints);
+
+    // Convert labels into CFlow format
+    matrix2d_t *labelMTTransposed = matrixCreate(1, nInstances);
+    labelMTTransposed->data[0] = trainingData.labels;
+
+    matrix2d_t **inputs;
+    matrix2d_t **targets = calloc(1, sizeof(matrix2d_t*));
+    targets[0] = matrixTranspose(labelMTTransposed);
+
+    linkNodes(layer3, y);
+    //writeGraph(network);
+    // Don't know if batch size of 100 is right
+    train(network, inputs, targets, 0.1, 100, CSL, 100, SGD);
+}
+
+void trainMNISTSimple() {
+    node_t *x = nodeInit("x", 0, 1, true);
+    x->content.data->internalNode = false;
+
+    int nInstances = 60000;
+
+    int batchSize = 1;
+    x->matrix->matrix2d = matrixCreate(batchSize, 784);
+
+    // Loading training data
+    csvDataPack_t trainingData = readCSV("data/mnist_train.csv", nInstances);
+    matrix2d_t** inputs = calloc(1, sizeof(matrix2d_t*));
+    inputs[0] = matrixCreate(nInstances, 784);
+    matrix2d_t** matrixData = trainingData.matrixInputs;
+    for (int i = 0; i < nInstances; i++) {
+        inputs[0]->data[i] = flatten2d(matrixData[i]);
+    }
+
+
+    node_t **entryPoints = NULL;
+    int n = 0;
+
+    push(&entryPoints, &n, x);
+
+    //Add sequential model
+    node_t *layer1 = denseLayer(x, 64, RELU, &entryPoints, &n);
+    node_t *layer2 = denseLayer(layer1, 64, RELU, &entryPoints, &n);
+    node_t *layer3 = denseLayer(layer2, 10, SIGMOID, &entryPoints, &n);
+
+    node_t *y = nodeInit("y", 1, 0, true);
+    y->content.data->internalNode = false;
+
+    linkNodes(layer3, y);
+
+    node_t **exitPoints = malloc(sizeof(node_t*));
+    exitPoints[0] = y;
+    graph_t *network = graphInit("mnist", n, entryPoints, 1, exitPoints);
+
+    // Convert labels into CFlow format
+    matrix2d_t *labelMTTransposed = matrixCreate(1, nInstances);
+    labelMTTransposed->data[0] = trainingData.labels;
+
+    matrix2d_t **targets = calloc(1, sizeof(matrix2d_t*));
+    targets[0] = matrixTranspose(labelMTTransposed);
+
+    // Don't know if batch size of 100 is right
+    train(network, inputs, targets, 0.1, 5, CSL, batchSize, SGD);
+    
+}
+
 int main(void) {
 
-    graph_t *graphOne = genGraphOne();
+    /*graph_t *graphOne = genGraphOne();
     graphFileWrite("DAG_1_SAVE", graphOne);
     graph_t *graphOneRead = graphFileRead("DAG_1_SAVE");
     writeGraph(graphOneRead);
@@ -239,9 +359,10 @@ int main(void) {
 
     lstm = LSTM(inputs, 2, SIGMOID, 5);
     writeGraph(compile(lstm, "lstmDiff"));
-    free(inputs);
+    free(inputs);*/
 
     trainXOR();
-
-    return EXIT_SUCCESS; 
+    //trainMNISTSimple();
+    //trainMNIST();
+    return EXIT_SUCCESS;
 }

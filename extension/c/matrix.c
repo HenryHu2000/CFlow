@@ -25,6 +25,24 @@ matrix2d_t *matrixCreate(int nRows, int nCols) {
     return matrix;
 }
 
+matrix3d_t *matrix3DCreate(int nRows, int nCols, int nDepth) {
+    matrix3d_t *matrix = malloc(sizeof(matrix3d_t));
+
+    matrix->nRows = nRows;
+    matrix->nCols = nCols;
+    matrix->nDepth = nDepth;
+
+    double ***data = calloc(nRows, sizeof(double*));
+    for (int i = 0; i < nRows; i++) {
+        data[i] = calloc(nCols, sizeof(double*));
+        for (int j = 0; j < nCols; j++) {
+            data[i][j] = calloc(nDepth, sizeof(double));
+        }
+    }
+    matrix->data = data;
+    return matrix;
+}
+
 double matrixGet(matrix2d_t *matrix, int row, int col) {
     assert(matrix);
     return matrix->data[row][col];
@@ -438,6 +456,44 @@ bool areMatrixesEqual(matrix2d_t *matrix1, matrix2d_t *matrix2, double tolerance
         }
     }
     return true;
+}
+
+matrix2d_t *matrixFlatten(matrix3d_t *matrix) {
+    matrix2d_t *flatTranspose = matrixCreate(1, matrix->nRows * matrix->nCols * matrix->nDepth);
+
+    for (int i = 0; i < matrix->nRows; i++) {
+        for (int j = 0; j < matrix->nCols; j++) {
+            for (int k = 0; k < matrix->nDepth; k++) {
+                matrixSet(flatTranspose, (i * matrix->nCols) + (j * matrix->nDepth) + k, 0, matrix->data[i][j][k]);
+            }
+        }
+    }
+    matrix2d_t *flattened = matrixTranspose(flatTranspose);
+    matrixFree(flatTranspose);
+    return flattened;
+}
+
+matrix3d_t *matrixUnflatten(matrix2d_t *matrix, int nRows, int nCols, int nDepth) {
+    matrix3d_t *unflattened = matrix3DCreate(nRows, nCols, nDepth);
+
+    for (int i = 0; i < nRows; i++) {
+        for (int j = 0; j < nCols; j++) {
+            for (int k = 0; k < nDepth; k++) {
+                unflattened->data[i][j][k] = matrixGet(matrix, (i * nCols) + (j * nDepth) + k, 0);
+            }
+        }
+    }
+    return unflattened;
+}
+
+double* flatten2d(matrix2d_t *matrix) {
+    double *flattened = calloc(matrix->nRows * matrix->nCols, sizeof(double));
+    for (int i = 0; i < matrix->nRows; i++) {
+        for (int j = 0; j < matrix->nCols; j++) {
+            flattened[(i * matrix->nCols) + j] = matrixGet(matrix, i, j);
+        }
+    }
+    return flattened;
 }
 
 void matrixPrint(matrix2d_t *matrix) {
